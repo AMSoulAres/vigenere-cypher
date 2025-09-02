@@ -2,20 +2,21 @@ from collections import Counter
 import math
 
 
-class VigenereCipher():
+class VigenereCypher():
     def __init__(self, key: str, alphabet: str = "abcdefghijklmnopqrstuvwxyz"):
         self.key = key.lower()
         self.alphabet = alphabet.lower()
 
     def encode(self, text: str) -> str:
         encoded_chars = []
-        for i, char in enumerate(text):
+        key_index = 0
+        for char in text:
             if char in self.alphabet:
                 # Aqui usa módulo para gerar o keystream.
                 # Quando i excede o tamanho da chave retorna para o inicio da chave
                 # e assim por diante independente do tamanho da mensagem.
                 # Ignora espaços vazios nesse caso.
-                key_char = self.key[i % len(self.key)]
+                key_char = self.key[key_index % len(self.key)]
 
                 # Usa uma lógica parecida com o key_char.
                 # A cifra se baseia em somar os indices da letra da mensagem e da letra da chave e deslocar pelo alfabeto;
@@ -28,23 +29,36 @@ class VigenereCipher():
                 # print("Divisão: " + str(self.alphabet.index(char)) + " + " + str(self.alphabet.index(key_char)) + " % " + str(len(self.alphabet)) + " = " + str(encoded_index))
                 # print("LETRA = " + self.alphabet[encoded_index])
                 encoded_chars.append(self.alphabet[encoded_index])
+
+                key_index += 1
+            else:
+                encoded_chars.append(char)
         return ''.join(encoded_chars)
     
     def decode(self, text: str) -> str:
         decoded_chars = []
-        for i, char in enumerate(text):
+        key_index = 0
+        for char in text:
             if char in self.alphabet:
                 # Exata mesma lógica para keystream
-                key_char = self.key[i % len(self.key)]
+                key_char = self.key[key_index % len(self.key)]
 
                 # Essa lógica é o inverso da de encode, só volta no deslocamento. Ao subtrair chega-se na letra original
                 decoded_index = (self.alphabet.index(char) - self.alphabet.index(key_char)) % len(self.alphabet)
                 decoded_chars.append(self.alphabet[decoded_index])
+
+                key_index += 1
+            else:
+                decoded_chars.append(char)
         return ''.join(decoded_chars)
 
 class BreakCypher():
-    def __init__(self, language, method="Kasiski", limit=20):
+    # Para que essa quebra pelo método de kasiski de análise de frequência por kasiski funcione o texto de entrada deve ter tamanho considerável. (100x o tamanho da chave a ser encontrada)
+
+    def __init__(self, language, method="kasiski", limit=20, alphabet="abcdefghijklmnopqrstuvwxyz"):
         self.language = language
+        self.alphabet = alphabet
+        self.method = method
         self.freq = {}
         self.load_frequency_table(language)
 
@@ -70,23 +84,12 @@ class BreakCypher():
         else:
             print("Língua não suportada. Use 'pt' para português ou 'en' para inglês.")
             raise ValueError("Língua não suportada")
-        
-    def frequency_analysis(self, text):
-        text = text.lower()
-        freq_count = {char: 0 for char in self.freq.keys()} # Inicia o dicionário com cada letra do texto zerada
-        for char in text:
-            if char in freq_count:
-                freq_count[char] += 1
-        for char, freq in freq_count.items():
-            freq = freq / len(text)
-            self.freq[char] = freq
-            print(f"Frequência de '{char}': {freq:.4f}")
 
-        self.freq = dict(sorted(self.freq.items(), key=lambda item: item[1], reverse=True))
-
-    def kasiski_key_size(self, text, seq_length=3, limit=20, exclude=[]):
+    def kasiski_method_possible_key_sizes(self, text, seq_length=3, limit=20, exclude=[]):
         all_distances = self._find_sequences_distances(text, seq_length)
-        possible_key_sizes = self._most_common_factors(all_distances, limit)
+        return self.most_common_factors(all_distances, limit)
+
+
     
     def _find_sequences_distances(self, text, seq_length=3):
         text = text.lower()
@@ -112,10 +115,10 @@ class BreakCypher():
             return None
 
         print(f"\nDistâncias encontradas entre sequências repetidas: {all_distances}")
+        return all_distances
 
 
     def _get_factors(self, number):
-        """Função auxiliar para encontrar todos os fatores de um número."""
         factors = set()
         for i in range(1, int(math.sqrt(number)) + 1):
             if number % i == 0:
@@ -130,7 +133,6 @@ class BreakCypher():
         for num in numbers:
             factors = self._get_factors(num)
             # Filtra os fatores de acordo com as regras ( > 2 e <= limit). (todos vão ter 1 como fator)
-            # Também filtra ten
             valid_factors = [f for f in factors if 2 <= f <= limit]
             all_factors.extend(valid_factors)
             if valid_factors:
@@ -151,8 +153,113 @@ class BreakCypher():
         print(f"O tamanho de chave da mais provável para menos provável: {most_common_factors_sorted}")
 
         return most_common_factors_sorted
+    
+    def _chi_squared_test(self, text):
+        # Calcula a frequência das letras no texto fornecido
+        observed_counts = Counter(c for c in text if c in self.alphabet)
+        text_len = len(text)
 
+        # Se o texto for vazio, retorna um valor alto para descartá-lo
+        if text_len == 0:
+            return float('inf')
+
+        # Calcula o valor de Qui-Quadrado
+        chi_squared = 0.0
+        for letter in self.alphabet:
+            # Frequência esperada da letra no idioma escolhido
+            expected_count = self.freq.get(letter, 0.0) * text_len
+            
+            # Contagem observada da letra no texto
+            observed_count = observed_counts.get(letter, 0)
+            
+            # A fórmula de Qui-Quadrado
+            difference = observed_count - expected_count
+            chi_squared += (difference * difference) / (expected_count + 1) # +1 para evitar divisão por zero
+
+        return chi_squared
+
+    def _find_key_for_column(self, column):
+        best_chi = float('inf')
+        best_key_char = ''
+
+        # Testa cada letra do alfabeto como uma possível chave de Cifra de César
+        for key_char in self.alphabet:
+            # "Decifra" a coluna usando a letra da chave atual (key_char)
+            # Isso é o mesmo que a função de decode, mas para uma única letra
+            shift = self.alphabet.index(key_char)
+            decrypted_column = ""
+            for char in column:
+                if char in self.alphabet:
+                    decrypted_index = (self.alphabet.index(char) - shift) % len(self.alphabet)
+                    decrypted_column += self.alphabet[decrypted_index]
+            
+            # Calcula o Qui-Quadrado para a coluna decifrada
+            chi = self._chi_squared_test(decrypted_column)
+            
+            # Se o resultado for o menor até agora, guarda essa letra da chave
+            if chi < best_chi:
+                best_chi = chi
+                best_key_char = key_char
+        
+        return best_key_char
+
+    def break_cypher(self, text):
+        print("\n--- Iniciando Quebra da Cifra de Vigenère ---")
+        
+        # Usa o método escolhido para encontrar o tamanho mais provável da chave
+        if self.method == "kasiski":
+            possible_sizes = self.kasiski_method_possible_key_sizes(text)
+            if not possible_sizes:
+                print("Não foi possível determinar o tamanho da chave.")
+                return ""
+        else:
+            print("Não implementado")
+
+        for key_length in possible_sizes:
+            print(f"\nTamanho de chave mais provável sendo testado: {key_length}")
+
+            # Divide o texto cifrado em colunas com base no tamanho da chave
+            columns = [''] * key_length
+
+            key_index = 0 # Contador que só avança para caracteres do alfabeto
+            for char in text:
+                if char in self.alphabet:
+                    columns[key_index % key_length] += char
+                    key_index += 1 # Incrementa o contador apenas quando um caractere válido é processado
+            # print(f"Colunas formadas para análise: {columns}")
+            
+            found_key = ""
+
+            # Para cada coluna, encontra a letra da chave correspondente.
+            # Testa as 26 posições possíveis do alfabeto para cada coluna
+            for i, column in enumerate(columns):
+                # print(f"\nAnalisando coluna {i+1}/{key_length}...")
+
+                # Utiliza o teste do Qui-Quadrado para encontrar a letra da chave
+                # A letra da chave é aquela que minimiza a estatística de Qui-Quadrado
+                key_char = self._find_key_for_column(column)
+                # print(f"Letra da chave encontrada para a coluna {i+1}: '{key_char}'")
+                found_key += key_char
+                
+            print("\n--- Quebra da Cifra Finalizada ---")
+            print(f"Chave encontrada: {found_key}")
+            print(f"Texto cifrado: {text}")
+            cifrador = VigenereCypher(key=found_key, alphabet=self.alphabet)
+            print(f"Texto decifrado: {cifrador.decode(text)}")
+            user_input = input("A mensagem está consistente? (S/N)")
+
+            if user_input.strip().upper() == 'S':
+                print("Mensagem consistente.")
+                return found_key
+            else:
+                print("Mensagem inconsistente. Testando próximo tamanho")
+                continue
 
 if __name__ == "__main__":
-    abroba = VigenereCipher(key="lemon")
-    abroba.encode("attack")
+    plaintext = "a gloria que se nao prova aos outros nao e gloria para nos e vaidade e pode ser ate remorso talvez nao me explico bem mas creio que me entende uma noite destas ha de ser o que me disse um secretario de estado que nao me conhecia e com quem travei conhecimento em casa do comendador pereira da silva foi uma noite de julho de chovia a potes e o comendador que e muito meu amigo convidou me para ficar e dormir ali eu resisti mas ele tanto instou que aceitei o convite e fiquei"
+    plaintext= "texto bem menor"
+    abroba = VigenereCypher(key="abroba")
+    encrypted = abroba.encode(plaintext)
+
+    attack = BreakCypher(language="pt", method="kasiski")
+    key = attack.break_cypher(encrypted)

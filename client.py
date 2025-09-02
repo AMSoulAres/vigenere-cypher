@@ -2,7 +2,7 @@ import socket
 import threading
 import sys
 
-from cypher import VigenereCipher
+from cypher import VigenereCypher
 
 class ChatClient:
     """
@@ -14,14 +14,17 @@ class ChatClient:
         self.host = host
         self.port = port
         self.peer_socket = None
-        self.cypher = VigenereCipher("LEMON")
+        self.cypher = VigenereCypher("abroba")
 
     def _preprocess_message_for_sending(self, message):
         # print(f"Pré-processando para envio: '{message}'")
-        return self.cypher.encode(message)
+        encoded = self.cypher.encode(message)
+        print(f"Texto cifrado: {encoded}")
+        return encoded
 
     def _postprocess_received_message(self, message):
         # print(f"Pós-processando recebido: '{message}'")
+        print(message)
         return self.cypher.decode(message)
 
     def _receive_messages(self):
