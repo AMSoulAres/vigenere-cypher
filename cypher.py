@@ -87,7 +87,10 @@ class BreakCypher():
 
     def kasiski_method_possible_key_sizes(self, text, seq_length=3, limit=20, exclude=[]):
         all_distances = self._find_sequences_distances(text, seq_length)
-        return self.most_common_factors(all_distances, limit)
+        if all_distances:
+            return self.most_common_factors(all_distances, limit)
+        else:
+            return False
 
 
     
@@ -257,7 +260,7 @@ class BreakCypher():
 
 if __name__ == "__main__":
     plaintext = "a gloria que se nao prova aos outros nao e gloria para nos e vaidade e pode ser ate remorso talvez nao me explico bem mas creio que me entende uma noite destas ha de ser o que me disse um secretario de estado que nao me conhecia e com quem travei conhecimento em casa do comendador pereira da silva foi uma noite de julho de chovia a potes e o comendador que e muito meu amigo convidou me para ficar e dormir ali eu resisti mas ele tanto instou que aceitei o convite e fiquei"
-    plaintext= "texto bem menor"
+    #plaintext= "texto bem menor"
     abroba = VigenereCypher(key="abroba")
     encrypted = abroba.encode(plaintext)
 
